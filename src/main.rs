@@ -1,560 +1,296 @@
-extern crate rand;
-extern crate sdl2;
+// src/main.rs
+mod intersection;
+mod road;
+mod traffic_light;
+mod vehicle;
 
-use rand::Rng;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
-use sdl2::rect::Rect;
+use std::collections::HashMap;
 use std::time::Duration;
+use rand::Rng;
 
-const LARGEUR_ECRAN: i32 = 800;
-const HAUTEUR_ECRAN: i32 = 800;
-const VITESSE_MIN: i32 = 2;
-const VITESSE_MAX: i32 = 3;
-const LARGEUR_VOITURE: i32 = 20;
-const HAUTEUR_VOITURE: i32 = 20;
-const DISTANCE_SECURITE: i32 = 30;
-const COULEUR_GAUCHE: Color = Color::RGB(255, 0, 0);
-const COULEUR_DROITE: Color = Color::RGB(0, 255, 0);
-const COULEUR_TOUT_DROIT: Color = Color::RGB(0, 0, 255);
+use traffic_light::{LightState, TrafficLight};
+use vehicle::{Direction, Vehicle};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Direction {
-    Gauche,
-    Droite,
-    ToutDroit,
-}
+use road::Road;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Cote {
-    Sud,
-    Nord,
-    Ouest,
-    Est,
-}
+const SAFE_DISTANCE: i32 = 50;
+const SINGLE_ROAD_PART: i32 = 350;
+const VEHICULE_LENGTH: i32 = 40;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Feu {
-    Vert,
-    Rouge,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct FeuTricolore {
-    pub couleur: Feu,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct Voiture {
-    pub x: i32,
-    pub y: i32,
-    pub couleur: Color,
-    pub direction: Direction,
-    pub cote: Cote,
-    pub vitesse: i32,
-}
-
-impl Voiture {
-    pub fn nouvelle(cote: Cote) -> Voiture {
-        let mut rng = rand::thread_rng();
-        let nombre_aleatoire = rng.gen_range(0..3);
-        let vitesse = rng.gen_range(VITESSE_MIN..VITESSE_MAX);
-        let direction: Direction;
-        let couleur: Color;
-        match nombre_aleatoire {
-            0 => {
-                direction = Direction::Gauche;
-                couleur = COULEUR_GAUCHE;
-            }
-            1 => {
-                direction = Direction::ToutDroit;
-                couleur = COULEUR_TOUT_DROIT;
-            }
-            _ => {
-                direction = Direction::Droite;
-                couleur = COULEUR_DROITE;
-            }
-        }
-        match cote {
-            Cote::Est => {
-                let x = 0;
-                let y = HAUTEUR_ECRAN / 2;
-                Voiture {
-                    x,
-                    y,
-                    couleur,
-                    direction,
-                    cote,
-                    vitesse,
-                }
-            }
-            Cote::Nord => {
-                let x = LARGEUR_ECRAN / 2 - LARGEUR_VOITURE;
-                let y = 0;
-                Voiture {
-                    x,
-                    y,
-                    couleur,
-                    direction,
-                    cote,
-                    vitesse,
-                }
-            }
-            Cote::Sud => {
-                let x = LARGEUR_ECRAN / 2;
-                let y = HAUTEUR_ECRAN - HAUTEUR_VOITURE;
-                Voiture {
-                    x,
-                    y,
-                    couleur,
-                    direction,
-                    cote,
-                    vitesse,
-                }
-            }
-            Cote::Ouest => {
-                let x = LARGEUR_ECRAN - LARGEUR_VOITURE;
-                let y = HAUTEUR_ECRAN / 2 - HAUTEUR_VOITURE;
-                Voiture {
-                    x,
-                    y,
-                    couleur,
-                    direction,
-                    cote,
-                    vitesse,
-                }
-            }
-        }
-    }
-
-    pub fn voiture_aleatoire() -> Voiture {
-        let mut rng = rand::thread_rng();
-        let nombre_aleatoire = rng.gen_range(0..4);
-        match nombre_aleatoire {
-            0 => Voiture::nouvelle(Cote::Est),
-            1 => Voiture::nouvelle(Cote::Nord),
-            2 => Voiture::nouvelle(Cote::Sud),
-            _ => Voiture::nouvelle(Cote::Ouest),
-        }
-    }
-
-    pub fn deplacer(&mut self, feu: FeuTricolore) {
-        match self.cote {
-            Cote::Est => {
-                if self.x + self.vitesse < LARGEUR_ECRAN / 2 - 2 * LARGEUR_VOITURE {
-                    self.x += self.vitesse;
-                } else if self.x + self.vitesse < LARGEUR_ECRAN / 2 - LARGEUR_VOITURE {
-                    if feu.couleur == Feu::Vert {
-                        self.x += self.vitesse;
-                    } else {
-                        self.x = LARGEUR_ECRAN / 2 - 2 * LARGEUR_VOITURE;
-                    }
-                } else {
-                    match self.direction {
-                        Direction::Gauche => {
-                            self.x = LARGEUR_ECRAN / 2;
-                            self.y -= self.vitesse;
-                        }
-                        Direction::Droite => {
-                            self.x = LARGEUR_ECRAN / 2 - LARGEUR_VOITURE;
-                            self.y += self.vitesse;
-                        }
-                        Direction::ToutDroit => {
-                            self.x += self.vitesse;
-                        }
-                    }
-                }
-            }
-            Cote::Nord => {
-                if self.y + self.vitesse < HAUTEUR_ECRAN / 2 - 2 * HAUTEUR_VOITURE {
-                    self.y += self.vitesse;
-                } else if self.y + self.vitesse < HAUTEUR_ECRAN / 2 - HAUTEUR_VOITURE {
-                    if feu.couleur == Feu::Vert {
-                        self.y += self.vitesse;
-                    } else {
-                        self.y = HAUTEUR_ECRAN / 2 - 2 * HAUTEUR_VOITURE;
-                    }
-                } else {
-                    match self.direction {
-                        Direction::Gauche => {
-                            self.y = HAUTEUR_ECRAN / 2;
-                            self.x += self.vitesse;
-                        }
-                        Direction::Droite => {
-                            self.y = HAUTEUR_ECRAN / 2 - HAUTEUR_VOITURE;
-                            self.x -= self.vitesse;
-                        }
-                        Direction::ToutDroit => {
-                            self.y += self.vitesse;
-                        }
-                    }
-                }
-            }
-            Cote::Ouest => {
-                if self.x - self.vitesse > LARGEUR_ECRAN / 2 + 2 * LARGEUR_VOITURE {
-                    self.x -= self.vitesse;
-                } else if self.x - self.vitesse > LARGEUR_ECRAN / 2 {
-                    if feu.couleur == Feu::Vert {
-                        self.x -= self.vitesse;
-                    } else {
-                        self.x = LARGEUR_ECRAN / 2 + LARGEUR_VOITURE;
-                    }
-                } else {
-                    match self.direction {
-                        Direction::Gauche => {
-                            self.x = LARGEUR_ECRAN / 2 - LARGEUR_VOITURE;
-                            self.y += self.vitesse;
-                        }
-                        Direction::Droite => {
-                            self.x = LARGEUR_ECRAN / 2;
-                            self.y -= self.vitesse;
-                        }
-                        Direction::ToutDroit => {
-                            self.x -= self.vitesse;
-                        }
-                    }
-                }
-            }
-            Cote::Sud => {
-                if self.y - self.vitesse > HAUTEUR_ECRAN / 2 + 2 * HAUTEUR_VOITURE {
-                    self.y -= self.vitesse;
-                } else if self.y - self.vitesse > HAUTEUR_ECRAN / 2 {
-                    if feu.couleur == Feu::Vert {
-                        self.y -= self.vitesse;
-                    } else {
-                        self.y = HAUTEUR_ECRAN / 2 + HAUTEUR_VOITURE;
-                    }
-                } else {
-                    match self.direction {
-                        Direction::Gauche => {
-                            self.y = HAUTEUR_ECRAN / 2 - HAUTEUR_VOITURE;
-                            self.x -= self.vitesse;
-                        }
-                        Direction::Droite => {
-                            self.y = HAUTEUR_ECRAN / 2;
-                            self.x += self.vitesse;
-                        }
-                        Direction::ToutDroit => {
-                            self.y -= self.vitesse;
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-//Structure Route et son implémentation
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct Route {
-    pub voitures_avant_feu_nord: Vec<Voiture>,
-    pub voitures_avant_feu_sud: Vec<Voiture>,
-    pub voitures_avant_feu_est: Vec<Voiture>,
-    pub voitures_avant_feu_ouest: Vec<Voiture>,
-    pub voitures_dans_intersection: Vec<Voiture>,
-    pub voitures_apres_feu_nord: Vec<Voiture>,
-    pub voitures_apres_feu_sud: Vec<Voiture>,
-    pub voitures_apres_feu_est: Vec<Voiture>,
-    pub voitures_apres_feu_ouest: Vec<Voiture>,
-    pub feu_nord: FeuTricolore,
-    pub feu_est: FeuTricolore,
-    pub feu_sud: FeuTricolore,
-    pub feu_ouest: FeuTricolore,
-}
-
-impl Route {
-    pub fn nouvelle() -> Route {
-        Route {
-            voitures_avant_feu_nord: vec![],
-            voitures_avant_feu_sud: vec![],
-            voitures_avant_feu_est: vec![],
-            voitures_avant_feu_ouest: vec![],
-            voitures_dans_intersection: vec![],
-            voitures_apres_feu_nord: vec![],
-            voitures_apres_feu_sud: vec![],
-            voitures_apres_feu_est: vec![],
-            voitures_apres_feu_ouest: vec![],
-            feu_nord: FeuTricolore { couleur: Feu::Rouge },
-            feu_est: FeuTricolore { couleur: Feu::Rouge },
-            feu_sud: FeuTricolore { couleur: Feu::Rouge },
-            feu_ouest: FeuTricolore { couleur: Feu::Rouge },
-        }
-    }
-}
-
-fn main() {
-    let sdl_context = sdl2::init().unwrap();
-    let video_subsystem = sdl_context.video().unwrap();
+fn main() -> Result<(), String> {
+    let sdl_context = sdl2::init()?;
+    let video_subsystem = sdl_context.video()?;
 
     let window = video_subsystem
-        .window("Simulation Intersection Routière", 800, 800)
+        .window("Road Intersection", 800, 800)
         .position_centered()
         .build()
-        .unwrap();
+        .map_err(|e| e.to_string())?;
 
-    let mut canvas = window.into_canvas().build().unwrap();
-    let mut event_pump = sdl_context.event_pump().unwrap();
+    let mut canvas = window
+        .into_canvas()
+        .present_vsync()
+        .build()
+        .map_err(|e| e.to_string())?;
 
-    //Créer les véhicules initiaux
-    let mut route = Route::nouvelle();
+    canvas.set_draw_color(Color::RGB(20, 40, 20));
+    canvas.clear();
+    canvas.present();
 
-    //Boucle principale de simulation
+    let mut light_s = TrafficLight::new(460, 460, 20, 20, LightState::Red);
+    let mut light_w = TrafficLight::new(320, 460, 20, 20, LightState::Red);
+    let mut light_n = TrafficLight::new(320, 320, 20, 20, LightState::Green);
+    let mut light_e = TrafficLight::new(460, 320, 20, 20, LightState::Red);
+    let mut vehicles = Vec::new();
+
+    let mut last_spawn = HashMap::new();
+    last_spawn.insert(Direction::North, 0);
+    last_spawn.insert(Direction::South, 0);
+    last_spawn.insert(Direction::East, 0);
+    last_spawn.insert(Direction::West, 0);
+
+    let mut event_pump = sdl_context.event_pump()?;
+    let mut n = 0;
+    let mut green_timer = 0.;
+    let mut frame_count = 0;
+    let mut current_light: u8 = 1;
+
     'running: loop {
+        frame_count += 1;
+
+        // Input handling
         for event in event_pump.poll_iter() {
             match event {
-                Event::Quit { .. }
-                | Event::KeyDown {
-                    keycode: Some(Keycode::Escape),
+                Event::Quit { .. } => break 'running,
+                Event::KeyDown {
+                    keycode: Some(keycode),
                     ..
-                } => break 'running,
+                } => {
+                    let direction = match keycode {
+                        Keycode::Up => Some(Direction::North),
+                        Keycode::Down => Some(Direction::South),
+                        Keycode::Left => Some(Direction::West),
+                        Keycode::Right => Some(Direction::East),
+                        Keycode::R => {
+                            let mut rng = rand::rng();
+                            let val = rng.random_range(0..4);
+                            let res = match val {
+                                0 => Some(Direction::North),
+                                1 => Some(Direction::South),
+                                2 => Some(Direction::West),
+                                3 => Some(Direction::East),
+                                _ => unreachable!(),
+                            };
+                            res
+                        },
+                        Keycode::Escape => break 'running,
+                        _ => None,
+                    };
 
-                //Générer un véhicule aléatoire lors de l'appui sur une touche de direction
-                Event::KeyDown {
-                    keycode: Some(Keycode::Left),
-                    ..
-                } => {
-                    route.voitures_avant_feu_est
-                        .push(Voiture::nouvelle(Cote::Est));
-                }
-                Event::KeyDown {
-                    keycode: Some(Keycode::Up),
-                    ..
-                } => {
-                    route.voitures_avant_feu_sud
-                        .push(Voiture::nouvelle(Cote::Sud));
-                }
-                Event::KeyDown {
-                    keycode: Some(Keycode::Right),
-                    ..
-                } => {
-                    route.voitures_avant_feu_ouest
-                        .push(Voiture::nouvelle(Cote::Ouest));
-                }
-                Event::KeyDown {
-                    keycode: Some(Keycode::Down),
-                    ..
-                } => {
-                    route.voitures_avant_feu_nord
-                        .push(Voiture::nouvelle(Cote::Nord));
-                }
-                Event::KeyDown {
-                    keycode: Some(Keycode::R),
-                    ..
-                } => {
-                    let voiture_aleatoire = Voiture::voiture_aleatoire();
-                    match voiture_aleatoire.cote {
-                        Cote::Est => route.voitures_avant_feu_est.push(voiture_aleatoire),
-                        Cote::Nord => route.voitures_avant_feu_nord.push(voiture_aleatoire),
-                        Cote::Sud => route.voitures_avant_feu_sud.push(voiture_aleatoire),
-                        Cote::Ouest => route.voitures_avant_feu_ouest.push(voiture_aleatoire),
+                    if let Some(dir) = direction {
+                        if is_safe_to_spawn(&vehicles, dir, &last_spawn, frame_count) {
+                            vehicles.push(Vehicle::new(dir));
+                            last_spawn.insert(dir, frame_count);
+                        }
                     }
                 }
                 _ => {}
             }
         }
 
-        //Effacer le canvas
-        canvas.set_draw_color(Color::RGB(0, 0, 0));
+        n += 1;
+        if n as f32 > green_timer * 150. {
+            n = 0;
+             let direction = match current_light {
+                0 => Direction::South,
+                1 => Direction::West,
+                2 => Direction::North,
+                3 => Direction::East,
+                _ => unreachable!(),
+            };
+            // println!("{} {} {} {} {:?}", green_timer, green_timer * 150., n, current_light, direction);
+
+            green_timer = get_timer(&vehicles, direction);
+            // Turn all lights red
+            light_n.update(false);
+            light_s.update(false);
+            light_e.update(false);
+            light_w.update(false);
+
+            if green_timer != 0. {
+                match current_light {
+                    0 => light_n.update(true),
+                    1 => light_e.update(true),
+                    2 => light_s.update(true),
+                    3 => light_w.update(true),
+                    _ => unreachable!(),
+                };
+            }
+
+            current_light = (current_light + 1) % 4;
+        }
+
+        // Compute tentative positions (with traffic light checks)
+        let mut tentatives: Vec<Vehicle> = vehicles
+            .iter()
+            .map(|v| {
+                let mut tentative_v = v.clone();
+                let light_state = match tentative_v.direction {
+                    Direction::North => light_s.state,
+                    Direction::South => light_n.state,
+                    Direction::East => light_w.state,
+                    Direction::West => light_e.state,
+                };
+
+                tentative_v.update(light_state);
+                tentative_v
+            })
+            .collect();
+
+        let mut safe_to_move = vec![true; tentatives.len()];
+        for i in 0..tentatives.len() {
+            let (before, rest) = tentatives.split_at_mut(i);
+            let (current, after) = rest.split_first_mut().unwrap();
+            let dir = current.direction;
+
+            let closest_ahead = before
+                .iter()
+                .chain(after.iter())
+                .filter(|other| other.direction == dir)
+                .filter_map(|other| {
+                    let distance = match dir {
+                        Direction::North => {
+                            current.rect.y() - (other.rect.y() + other.rect.height() as i32)
+                        }
+                        Direction::South => {
+                            other.rect.y() - (current.rect.y() + current.rect.height() as i32)
+                        }
+                        Direction::East => {
+                            other.rect.x() - (current.rect.x() + current.rect.width() as i32)
+                        }
+                        Direction::West => {
+                            current.rect.x() - (other.rect.x() + other.rect.width() as i32)
+                        }
+                    };
+                    if distance >= 0 {
+                        Some(distance)
+                    } else {
+                        None
+                    }
+                })
+                .min();
+
+            if let Some(distance) = closest_ahead {
+                if distance < SAFE_DISTANCE {
+                    safe_to_move[i] = false;
+                }
+            }
+        }
+
+
+        let mut collisions = vec![false; tentatives.len()];
+        for i in 0..tentatives.len() {
+            for j in (i + 1)..tentatives.len() {
+                let a = &tentatives[i];
+                let b = &tentatives[j];
+
+                if (a.in_intersection || b.in_intersection) && !a.has_turned && !b.has_turned {
+                    continue;
+                }
+
+                if a.rect.has_intersection(b.rect) {
+                    collisions[i] = true;
+                    collisions[j] = true;
+                }
+            }
+        }
+
+        // Update original vehicles only if safe
+        for (i, vehicle) in vehicles.iter_mut().enumerate() {
+            if safe_to_move[i] && !collisions[i] {
+                *vehicle = tentatives[i].clone();
+            }
+        }
+        vehicles.retain(|v| is_on_screen(v));
+
+        canvas.set_draw_color(Color::RGB(20, 40, 20));
         canvas.clear();
 
-        //Dessiner les voitures
-        for voiture in &route.voitures_apres_feu_est {
-            canvas.set_draw_color(voiture.couleur);
-            canvas
-                .fill_rect(Rect::new(
-                    voiture.x as i32,
-                    voiture.y as i32,
-                    LARGEUR_VOITURE as u32,
-                    HAUTEUR_VOITURE as u32,
-                ))
-                .unwrap();
+        let road_ns = Road::new(350, 0, 100, 800, true); // North‑South road 
+        let road_ew = Road::new(0, 350, 800, 100, false); // East‑West road 
+        road_ns.draw(&mut canvas);
+        road_ew.draw(&mut canvas);
+        intersection::draw(&mut canvas);
+        light_n.draw(&mut canvas);
+        light_s.draw(&mut canvas);
+        light_e.draw(&mut canvas);
+        light_w.draw(&mut canvas);
+        for vehicle in &vehicles {
+            vehicle.draw(&mut canvas);
         }
-        for voiture in &route.voitures_apres_feu_ouest {
-            canvas.set_draw_color(voiture.couleur);
-            canvas
-                .fill_rect(Rect::new(
-                    voiture.x as i32,
-                    voiture.y as i32,
-                    LARGEUR_VOITURE as u32,
-                    HAUTEUR_VOITURE as u32,
-                ))
-                .unwrap();
-        }
-        for voiture in &route.voitures_apres_feu_nord {
-            canvas.set_draw_color(voiture.couleur);
-            canvas
-                .fill_rect(Rect::new(
-                    voiture.x as i32,
-                    voiture.y as i32,
-                    LARGEUR_VOITURE as u32,
-                    HAUTEUR_VOITURE as u32,
-                ))
-                .unwrap();
-        }
-        for voiture in &route.voitures_apres_feu_sud {
-            canvas.set_draw_color(voiture.couleur);
-            canvas
-                .fill_rect(Rect::new(
-                    voiture.x as i32,
-                    voiture.y as i32,
-                    LARGEUR_VOITURE as u32,
-                    HAUTEUR_VOITURE as u32,
-                ))
-                .unwrap();
-        }
-        for voiture in &route.voitures_dans_intersection {
-            canvas.set_draw_color(voiture.couleur);
-            canvas
-                .fill_rect(Rect::new(
-                    voiture.x as i32,
-                    voiture.y as i32,
-                    LARGEUR_VOITURE as u32,
-                    HAUTEUR_VOITURE as u32,
-                ))
-                .unwrap();
-        }
-        for voiture in &route.voitures_avant_feu_est {
-            canvas.set_draw_color(voiture.couleur);
-            canvas
-                .fill_rect(Rect::new(
-                    voiture.x as i32,
-                    voiture.y as i32,
-                    LARGEUR_VOITURE as u32,
-                    HAUTEUR_VOITURE as u32,
-                ))
-                .unwrap();
-        }
-        for voiture in &route.voitures_avant_feu_ouest {
-            canvas.set_draw_color(voiture.couleur);
-            canvas
-                .fill_rect(Rect::new(
-                    voiture.x as i32,
-                    voiture.y as i32,
-                    LARGEUR_VOITURE as u32,
-                    HAUTEUR_VOITURE as u32,
-                ))
-                .unwrap();
-        }
-        for voiture in &route.voitures_avant_feu_nord {
-            canvas.set_draw_color(voiture.couleur);
-            canvas
-                .fill_rect(Rect::new(
-                    voiture.x as i32,
-                    voiture.y as i32,
-                    LARGEUR_VOITURE as u32,
-                    HAUTEUR_VOITURE as u32,
-                ))
-                .unwrap();
-        }
-        for voiture in &route.voitures_avant_feu_sud {
-            canvas.set_draw_color(voiture.couleur);
-            canvas
-                .fill_rect(Rect::new(
-                    voiture.x as i32,
-                    voiture.y as i32,
-                    LARGEUR_VOITURE as u32,
-                    HAUTEUR_VOITURE as u32,
-                ))
-                .unwrap();
-        }
-
-        //Dessiner les routes
-        canvas.set_draw_color(Color::RGB(255, 255, 255));
-        canvas
-            .draw_rect(Rect::new(
-                380,
-                0,
-                LARGEUR_VOITURE as u32,
-                HAUTEUR_ECRAN as u32,
-            ))
-            .unwrap();
-        canvas
-            .draw_rect(Rect::new(
-                400,
-                0,
-                LARGEUR_VOITURE as u32,
-                HAUTEUR_ECRAN as u32,
-            ))
-            .unwrap();
-        canvas
-            .draw_rect(Rect::new(
-                0,
-                380,
-                LARGEUR_ECRAN as u32,
-                HAUTEUR_VOITURE as u32,
-            ))
-            .unwrap();
-        canvas
-            .draw_rect(Rect::new(
-                0,
-                400,
-                LARGEUR_ECRAN as u32,
-                HAUTEUR_VOITURE as u32,
-            ))
-            .unwrap();
-
-        //Dessiner les feux tricolores
-        if route.feu_nord.couleur == Feu::Vert {
-            canvas.set_draw_color(Color::RGB(0, 255, 0));
-        } else {
-            canvas.set_draw_color(Color::RGB(255, 0, 0));
-        }
-        canvas
-            .draw_rect(Rect::new(
-                LARGEUR_ECRAN / 2 - 2 * LARGEUR_VOITURE,
-                HAUTEUR_ECRAN / 2 - 2 * HAUTEUR_VOITURE,
-                LARGEUR_VOITURE as u32,
-                HAUTEUR_VOITURE as u32,
-            ))
-            .unwrap();
-
-        if route.feu_est.couleur == Feu::Vert {
-            canvas.set_draw_color(Color::RGB(0, 255, 0));
-        } else {
-            canvas.set_draw_color(Color::RGB(255, 0, 0));
-        }
-        canvas
-            .draw_rect(Rect::new(
-                LARGEUR_ECRAN / 2 - 2 * LARGEUR_VOITURE,
-                HAUTEUR_ECRAN / 2 + HAUTEUR_VOITURE,
-                LARGEUR_VOITURE as u32,
-                HAUTEUR_VOITURE as u32,
-            ))
-            .unwrap();
-
-        if route.feu_sud.couleur == Feu::Vert {
-            canvas.set_draw_color(Color::RGB(0, 255, 0));
-        } else {
-            canvas.set_draw_color(Color::RGB(255, 0, 0));
-        }
-        canvas
-            .draw_rect(Rect::new(
-                LARGEUR_ECRAN / 2 + LARGEUR_VOITURE,
-                HAUTEUR_ECRAN / 2 + HAUTEUR_VOITURE,
-                LARGEUR_VOITURE as u32,
-                HAUTEUR_VOITURE as u32,
-            ))
-            .unwrap();
-
-        if route.feu_ouest.couleur == Feu::Vert {
-            canvas.set_draw_color(Color::RGB(0, 255, 0));
-        } else {
-            canvas.set_draw_color(Color::RGB(255, 0, 0));
-        }
-        canvas
-            .draw_rect(Rect::new(
-                LARGEUR_ECRAN / 2 + LARGEUR_VOITURE,
-                HAUTEUR_ECRAN / 2 - 2 * HAUTEUR_VOITURE,
-                LARGEUR_VOITURE as u32,
-                HAUTEUR_VOITURE as u32,
-            ))
-            .unwrap();
-/////main boucle tzad dyl simulation
-        //Mettre à jour l'écran
         canvas.present();
 
-        //Ajouter un délai pour contrôler les FPS
-        std::thread::sleep(Duration::from_millis(1000 / 60));
+        std::thread::sleep(Duration::from_millis(16));
     }
+    Ok(())
+}
+
+fn is_safe_to_spawn(
+    vehicles: &[Vehicle],
+    direction: Direction,
+    last_spawn: &HashMap<Direction, i32>,
+    current_frame: i32,
+) -> bool {
+    if let Some(last_frame) = last_spawn.get(&direction) {
+        if current_frame - last_frame < SAFE_DISTANCE / 2 {
+            return false;
+        }
+    }
+
+    let (spawn_coord, is_vertical) = match direction {
+        Direction::North => (760, true),
+        Direction::South => (80, true), 
+        Direction::East => (80, false), 
+        Direction::West => (760, false),
+    };
+
+    // Check distance from existing vehicles in the same direction
+    for vehicle in vehicles.iter().filter(|v| v.direction == direction) {
+        let vehicle_pos = if is_vertical {
+            vehicle.rect.y() + vehicle.rect.height() as i32
+        } else {
+            vehicle.rect.x() + vehicle.rect.width() as i32
+        };
+
+        let distance = (vehicle_pos - spawn_coord).abs();
+        if distance < SAFE_DISTANCE {
+            return false;
+        }
+    }
+
+    true
+}
+
+// Function to check if a vehicle is still on screen
+fn is_on_screen(vehicle: &Vehicle) -> bool {
+    let rect = vehicle.rect;
+    match vehicle.direction {
+        Direction::North => rect.y() > -50,
+        Direction::South => rect.y() < 850,
+        Direction::East => rect.x() < 850,
+        Direction::West => rect.x() > -50,
+    }
+}
+
+fn get_timer(vehicles: &[Vehicle], direction: Direction) -> f32 {
+    let mut cars_count = 0;
+    for car in vehicles {
+        if !car.has_turned && !car.in_intersection && car.direction == direction {
+            cars_count += 1;
+        }
+    }
+    (cars_count as f32 * 1.55) / (SINGLE_ROAD_PART / (VEHICULE_LENGTH + SAFE_DISTANCE)) as f32
 }
